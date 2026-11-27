@@ -1,35 +1,23 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const HOUR_HEIGHT = 64;
-
-const colors = {
-  Personal: "#64748b",
-  Education: "#6366f1",
-  Work: "#9333ea",
-  Sports: "#ea580c",
-  Health: "#16a34a",
-  Other: "#0891b2",
-};
-
-function dateKey(date) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
-function toMinutes(time) {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-}
+import {
+  HOUR_HEIGHT,
+  categoryColors,
+  dateKey,
+  toMinutes,
+  formatTime,
+  startTaskDrag,
+  isTaskDrag,
+  getDraggedTaskId,
+  getDropMinutes,
+} from "./dragScheduling";
 
 function formatHour(hour) {
   return `${hour % 12 || 12} ${hour >= 12 ? "PM" : "AM"}`;
 }
 
-// Arrange overlapping tasks into separate columns
+// Arrange overlapping tasks side by side
 
 function arrangeTasks(tasks) {
   const sorted = tasks
@@ -84,10 +72,15 @@ function Timeline({
   onEdit,
   onAdd,
   onSelectDate,
+  onMove,
 }) {
   const scrollRef = useRef(null);
 
   const [now, setNow] = useState(() => new Date());
+  const [draggedId, setDraggedId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+
+  // Update current time
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -103,7 +96,6 @@ function Timeline({
     now.getHours() * 60 + now.getMinutes();
 
   const firstDateKey = dateKey(days[0]);
-
   const dayCount = days.length;
 
   const visibleKeys = days.map(dateKey);
@@ -132,16 +124,83 @@ function Timeline({
     }
   }, [firstDateKey, dayCount, firstHour]);
 
+  // Start dragging
+
+  function handleDragStart(event, task) {
+    startTaskDrag(event, task);
+    setDraggedId(task.id);
+  }
+
+  // Clear dragging state
+
+  function handleDragEnd() {
+    setDraggedId(null);
+    setDropTarget(null);
+  }
+
+  // Highlight the destination time
+
+  function handleDragOver(event, date) {
+    if (!isTaskDrag(event)) return;
+
+    event.preventDefault();
+
+    event.dataTransfer.dropEffect = "move";
+
+    const minutes = getDropMinutes(event);
+    const key = dateKey(date);
+
+    setDropTarget((previous) => {
+      if (
+        previous?.key === key &&
+        previous?.minutes === minutes
+      ) {
+        return previous;
+      }
+
+      return { key, minutes };
+    });
+  }
+
+  function handleDragLeave(event) {
+    if (
+      event.relatedTarget instanceof Node &&
+      event.currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+
+    setDropTarget(null);
+  }
+
+  // Move the activity
+
+  function handleDrop(event, date) {
+    if (!isTaskDrag(event)) return;
+
+    event.preventDefault();
+
+    const id = getDraggedTaskId(event);
+    const minutes = getDropMinutes(event);
+
+    if (id) {
+      onMove(id, date, minutes);
+    }
+
+    handleDragEnd();
+  }
+
   return (
     <div className="timeline-container">
 
       <p className="timeline-hint">
-        Click a time slot to add an activity.
-        Click an existing activity to edit it.
+        Drag activities to reschedule them.
+        Click an empty slot to add a new task.
+        Click an activity to edit its details.
       </p>
 
       <div className="timeline-legend">
-        {Object.entries(colors).map(
+        {Object.entries(categoryColors).map(
           ([category, color]) => (
             <span key={category}>
               <i style={{ background: color }} />
@@ -155,14 +214,11 @@ function Timeline({
         className="planner-timeline-scroll"
         ref={scrollRef}
       >
-
         <div
-          className={`planner-timeline
-            ${dayCount === 7 ? "week-timeline" : ""}
-          `}
-          style={{
-            "--day-count": dayCount,
-          }}
+          className={`planner-timeline ${
+            dayCount === 7 ? "week-timeline" : ""
+          }`}
+          style={{ "--day-count": dayCount }}
         >
 
           {/* Calendar header */}
@@ -177,10 +233,11 @@ function Timeline({
               <button
                 type="button"
                 key={dateKey(date)}
-                className={`planner-day-heading
-                  ${dateKey(date) === todayKey
-                    ? "heading-today" : ""}
-                `}
+                className={`planner-day-heading ${
+                  dateKey(date) === todayKey
+                    ? "heading-today"
+                    : ""
+                }`}
                 onClick={() => onSelectDate(date)}
               >
                 <span>
@@ -195,67 +252,81 @@ function Timeline({
 
           </div>
 
-          {/* Hourly timeline */}
-
           <div className="planner-time-body">
+
+            {/* Time labels */}
 
             <div className="planner-time-labels">
 
-              {Array.from(
-                { length: 24 },
-                (_, hour) => (
-                  <div
-                    className="planner-hour-label"
-                    key={hour}
-                    style={{ height: HOUR_HEIGHT }}
-                  >
-                    {formatHour(hour)}
-                  </div>
-                )
-              )}
+              {Array.from({ length: 24 }, (_, hour) => (
+                <div
+                  key={hour}
+                  className="planner-hour-label"
+                  style={{ height: HOUR_HEIGHT }}
+                >
+                  {formatHour(hour)}
+                </div>
+              ))}
 
             </div>
+
+            {/* Calendar columns */}
 
             {days.map((date) => {
               const key = dateKey(date);
 
               const events = arrangeTasks(
-                tasks.filter(
-                  (task) => task.date === key
-                )
+                tasks.filter((task) => task.date === key)
               );
 
               return (
                 <div
-                  className="planner-day-column"
                   key={key}
+                  className={`planner-day-column ${
+                    dropTarget?.key === key
+                      ? "drag-target-column"
+                      : ""
+                  }`}
+                  onDragOver={(event) =>
+                    handleDragOver(event, date)
+                  }
+                  onDragLeave={handleDragLeave}
+                  onDrop={(event) =>
+                    handleDrop(event, date)
+                  }
                 >
 
-                  {Array.from(
-                    { length: 24 },
-                    (_, hour) => (
-                      <button
-                        className="planner-hour-slot"
-                        type="button"
-                        key={hour}
-                        style={{ height: HOUR_HEIGHT }}
-                        onClick={() => onAdd(date, hour)}
-                        aria-label={`Add task on ${date.toDateString()} at ${formatHour(hour)}`}
-                      >
-                        <span>+ Add</span>
-                      </button>
-                    )
-                  )}
+                  {/* Empty time slots */}
 
-                  {/* Scheduled activities */}
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <button
+                      type="button"
+                      key={hour}
+                      className="planner-hour-slot"
+                      style={{ height: HOUR_HEIGHT }}
+                      onClick={() => onAdd(date, hour)}
+                      aria-label={`Add task on ${date.toDateString()} at ${formatHour(hour)}`}
+                    >
+                      <span>+ Add</span>
+                    </button>
+                  ))}
+
+                  {/* Scheduled tasks */}
 
                   {events.map((task) => (
                     <button
                       type="button"
                       key={task.id}
-                      className={`planner-event
+                      draggable
+                      onDragStart={(event) =>
+                        handleDragStart(event, task)
+                      }
+                      onDragEnd={handleDragEnd}
+                      className={`planner-event draggable-task
                         ${task.completed
                           ? "event-completed" : ""}
+                        ${draggedId === task.id
+                          ? "task-dragging" : ""}
                       `}
                       style={{
                         top:
@@ -277,13 +348,14 @@ function Timeline({
                         }% - 6px)`,
 
                         "--event-color":
-                          colors[task.category] ||
-                          colors.Other,
+                          categoryColors[task.category] ||
+                          categoryColors.Other,
                       }}
                       onClick={() => onEdit(task)}
                       title={`${task.title} | ${task.startTime} - ${task.endTime}`}
                       aria-label={`Edit ${task.title}`}
                     >
+
                       <strong>{task.title}</strong>
 
                       <span>
@@ -299,14 +371,30 @@ function Timeline({
                     </button>
                   ))}
 
+                  {/* Drop time preview */}
+
+                  {dropTarget?.key === key && (
+                    <div
+                      className="drop-time-preview"
+                      style={{
+                        top:
+                          dropTarget.minutes / 60 *
+                          HOUR_HEIGHT,
+                      }}
+                    >
+                      <span>
+                        Move to {formatTime(dropTarget.minutes)}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Current time indicator */}
 
                   {key === todayKey && (
                     <div
                       className="current-time-line"
                       style={{
-                        top:
-                          (minutesNow / 60) * HOUR_HEIGHT,
+                        top: minutesNow / 60 * HOUR_HEIGHT,
                       }}
                     >
                       <span />
@@ -320,7 +408,6 @@ function Timeline({
           </div>
 
         </div>
-
       </div>
 
     </div>

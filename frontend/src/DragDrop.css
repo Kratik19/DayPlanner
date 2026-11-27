@@ -1,0 +1,150 @@
+
+/* =========================================
+   DAYPLANNER - DRAG AND DROP STYLING
+   PHASE 7
+========================================= */
+
+/* Draggable activities */
+
+.draggable-task {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.draggable-task:active {
+  cursor: grabbing;
+}
+
+.task-dragging {
+  opacity: 0.4 !important;
+  cursor: grabbing;
+}
+
+/* Highlight destination column */
+
+.drag-target-column {
+  background: color-mix(
+    in srgb,
+    var(--primary) 5%,
+    var(--card)
+  );
+}
+
+/* Drop time preview */
+
+.drop-time-preview {
+  position: absolute;
+
+  left: 0;
+  right: 0;
+
+  height: 3px;
+
+  background: var(--primary);
+
+  z-index: 8;
+  pointer-events: none;
+
+  box-shadow: 0 0 8px #6366f140;
+}
+
+.drop-time-preview span {
+  position: absolute;
+
+  top: 5px;
+  left: 5px;
+
+  padding: 6px 9px;
+
+  background: #6366f1;
+  color: #ffffff;
+
+  font-size: 10px;
+  font-weight: 600;
+
+  border-radius: 5px;
+
+  white-space: nowrap;
+
+  box-shadow: var(--shadow);
+}
+
+/* Monthly calendar drop destination */
+
+.month-cell.month-drop-target {
+  background: var(--primary-light);
+
+  outline: 2px dashed var(--primary);
+  outline-offset: -3px;
+}
+
+/* Task date input */
+
+.task-form input[type="date"] {
+  min-height: 42px;
+  color: var(--text);
+  background: var(--input-background);
+}
+
+/* Status message */
+
+.schedule-notice {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.schedule-notice:not(:empty) {
+  padding: 12px 15px;
+
+  background: var(--primary-light);
+
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+
+  border-radius: 8px;
+
+  margin-bottom: 18px;
+}
+
+/* Dark theme support */
+
+[data-theme="dark"] .drop-time-preview {
+  background: #a5b4fc;
+}
+
+[data-theme="dark"] .drop-time-preview span {
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .month-drop-target {
+  outline-color: #a5b4fc;
+}
+
+/* Mobile support */
+
+@media (max-width: 768px) {
+  .schedule-notice {
+    font-size: 12px;
+  }
+
+  .drop-time-preview span {
+    font-size: 9px;
+    padding: 4px 6px;
+  }
+}
+
+/* Reduced motion support */
+
+@media (prefers-reduced-motion: reduce) {
+  .draggable-task,
+  .month-drop-target,
+  .drop-time-preview {
+    transition: none !important;
+  }
+}
+
+/* END OF DRAG AND DROP CSS */

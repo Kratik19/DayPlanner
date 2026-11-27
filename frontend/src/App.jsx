@@ -4,8 +4,16 @@ import { useState, useEffect, useRef } from "react";
 import Timeline from "./Timeline";
 import CalendarViews from "./CalendarViews";
 
+import {
+  dateKey,
+  parseDate,
+  toMinutes,
+  formatTime,
+} from "./dragScheduling";
+
 import "./App.css";
 import "./CalendarViews.css";
+import "./DragDrop.css";
 
 const categories = [
   "Personal",
@@ -18,17 +26,9 @@ const categories = [
 
 const priorities = ["Low", "Medium", "High"];
 
-// ================================
+// ==============================
 // DATE UTILITIES
-// ================================
-
-function dateKey(date) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
+// ==============================
 
 function addDays(date, amount) {
   return new Date(
@@ -48,7 +48,7 @@ function getWeekStart(date) {
 function App() {
 
   // ==============================
-  // THEME
+  // THEME MANAGEMENT
   // ==============================
 
   const [theme, setTheme] = useState(() =>
@@ -88,6 +88,8 @@ function App() {
   const [dailyView, setDailyView] =
     useState("timeline");
 
+  const [notice, setNotice] = useState("");
+
   // ==============================
   // TASK STORAGE
   // ==============================
@@ -112,10 +114,11 @@ function App() {
   }, [tasks]);
 
   // ==============================
-  // TASK FORM
+  // TASK FORM STATES
   // ==============================
 
   const [title, setTitle] = useState("");
+  const [taskDate, setTaskDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
 
@@ -156,7 +159,7 @@ function App() {
   const weekEnd = weekDays[6];
 
   // ==============================
-  // TASK CALCULATIONS
+  // PRODUCTIVITY CALCULATIONS
   // ==============================
 
   const dailyTasks = tasks
@@ -180,14 +183,12 @@ function App() {
 
   const weekKeys = weekDays.map(dateKey);
 
-  const weekTasks = tasks.filter(
-    (task) => weekKeys.includes(task.date)
+  const weekTasks = tasks.filter((task) =>
+    weekKeys.includes(task.date)
   );
 
-  const monthTasks = tasks.filter(
-    (task) => task.date.startsWith(
-      selectedKey.slice(0, 7)
-    )
+  const monthTasks = tasks.filter((task) =>
+    task.date.startsWith(selectedKey.slice(0, 7))
   );
 
   const visibleTaskCount =
@@ -196,6 +197,31 @@ function App() {
       : calendarView === "month"
         ? monthTasks.length
         : dailyTasks.length;
+
+  // ==============================
+  // RESET TASK FORM
+  // ==============================
+
+  function resetForm() {
+    setTitle("");
+    setTaskDate("");
+    setStartTime("");
+    setEndTime("");
+    setCategory("Personal");
+    setPriority("Medium");
+    setEditingId(null);
+  }
+
+  function focusForm() {
+    formRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    titleRef.current?.focus({
+      preventScroll: true,
+    });
+  }
 
   // ==============================
   // CALENDAR NAVIGATION
@@ -210,6 +236,7 @@ function App() {
   function selectDate(date) {
     setSelectedDate(date);
     setCurrentMonth(date);
+    setNotice("");
     resetForm();
   }
 
@@ -228,11 +255,10 @@ function App() {
 
     if (calendarView === "day") {
       nextDate = addDays(selectedDate, direction);
+
     } else if (calendarView === "week") {
-      nextDate = addDays(
-        selectedDate,
-        direction * 7
-      );
+      nextDate = addDays(selectedDate, direction * 7);
+
     } else {
       const targetMonth = new Date(
         selectedDate.getFullYear(),
@@ -258,13 +284,10 @@ function App() {
 
   function getCalendarTitle() {
     if (calendarView === "month") {
-      return selectedDate.toLocaleDateString(
-        "en-IN",
-        {
-          month: "long",
-          year: "numeric",
-        }
-      );
+      return selectedDate.toLocaleDateString("en-IN", {
+        month: "long",
+        year: "numeric",
+      });
     }
 
     if (calendarView === "week") {
@@ -289,43 +312,16 @@ function App() {
       return `${start} – ${end}`;
     }
 
-    return selectedDate.toLocaleDateString(
-      "en-IN",
-      {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }
-    );
-  }
-
-  // ==============================
-  // TASK FORM FUNCTIONS
-  // ==============================
-
-  function resetForm() {
-    setTitle("");
-    setStartTime("");
-    setEndTime("");
-    setCategory("Personal");
-    setPriority("Medium");
-    setEditingId(null);
-  }
-
-  function focusForm() {
-    formRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-
-    titleRef.current?.focus({
-      preventScroll: true,
+    return selectedDate.toLocaleDateString("en-IN", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     });
   }
 
   // ==============================
-  // SAVE TASK
+  // ADD OR UPDATE TASK
   // ==============================
 
   function saveTask(event) {
@@ -341,9 +337,11 @@ function App() {
       return;
     }
 
+    const destinationDate = taskDate || selectedKey;
+
     const taskData = {
       title: title.trim(),
-      date: selectedKey,
+      date: destinationDate,
       startTime,
       endTime,
       category,
@@ -358,6 +356,9 @@ function App() {
             : task
         )
       );
+
+      setNotice("Task updated successfully.");
+
     } else {
       const newTask = {
         id: crypto.randomUUID(),
@@ -369,49 +370,55 @@ function App() {
         ...previous,
         newTask,
       ]);
+
+      setNotice("New task added successfully.");
     }
+
+    const newDate = parseDate(destinationDate);
+
+    setSelectedDate(newDate);
+    setCurrentMonth(newDate);
 
     resetForm();
   }
 
   // ==============================
-  // EDIT TASK
+  // EDIT EXISTING TASK
   // ==============================
 
   function editTask(task) {
-    const [y, m, d] =
-      task.date.split("-").map(Number);
+    const date = parseDate(task.date);
 
-    const taskDate = new Date(y, m - 1, d);
-
-    setSelectedDate(taskDate);
-    setCurrentMonth(taskDate);
+    setSelectedDate(date);
+    setCurrentMonth(date);
 
     setEditingId(task.id);
     setTitle(task.title);
+    setTaskDate(task.date);
     setStartTime(task.startTime);
     setEndTime(task.endTime);
     setCategory(task.category);
     setPriority(task.priority);
 
+    setNotice("");
     focusForm();
   }
 
   // ==============================
-  // QUICK SCHEDULING
+  // QUICK TASK CREATION
   // ==============================
 
   function addFromCalendar(date, hour = 9) {
     selectDate(date);
 
-    const start =
-      `${String(hour).padStart(2, "0")}:00`;
+    const start = formatTime(hour * 60);
 
     const end =
       hour === 23
         ? "23:59"
-        : `${String(hour + 1).padStart(2, "0")}:00`;
+        : formatTime((hour + 1) * 60);
 
+    setTaskDate(dateKey(date));
     setStartTime(start);
     setEndTime(end);
 
@@ -419,7 +426,77 @@ function App() {
   }
 
   // ==============================
-  // COMPLETE AND DELETE TASKS
+  // DRAG AND DROP SCHEDULING
+  // ==============================
+
+  function moveTask(id, destinationDate, newStartMinutes) {
+    const task = tasks.find(
+      (item) => String(item.id) === String(id)
+    );
+
+    if (!task) return;
+
+    const originalStart = toMinutes(task.startTime);
+    const originalEnd = toMinutes(task.endTime);
+
+    const duration = originalEnd - originalStart;
+
+    const newStart =
+      newStartMinutes === null
+        ? originalStart
+        : newStartMinutes;
+
+    const newEnd = newStart + duration;
+
+    // Prevent tasks from crossing midnight.
+
+    if (
+      !Number.isInteger(newStart) ||
+      newStart < 0 ||
+      duration <= 0 ||
+      newEnd > 1439
+    ) {
+      setNotice(
+        "Cannot move this task: it would extend beyond midnight. Choose an earlier time."
+      );
+
+      return;
+    }
+
+    const destinationKey = dateKey(destinationDate);
+
+    const updatedTask = {
+      ...task,
+      date: destinationKey,
+      startTime: formatTime(newStart),
+      endTime: formatTime(newEnd),
+    };
+
+    setTasks((previous) =>
+      previous.map((item) =>
+        item.id === task.id
+          ? updatedTask
+          : item
+      )
+    );
+
+    if (editingId === task.id) {
+      resetForm();
+    }
+
+    const formattedDate =
+      destinationDate.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+      });
+
+    setNotice(
+      `${task.title} moved to ${formattedDate}, ${updatedTask.startTime} – ${updatedTask.endTime}.`
+    );
+  }
+
+  // ==============================
+  // COMPLETE TASK
   // ==============================
 
   function toggleTask(id) {
@@ -435,10 +512,16 @@ function App() {
     );
   }
 
+  // ==============================
+  // DELETE TASK
+  // ==============================
+
   function deleteTask(id) {
-    if (!window.confirm(
-      "Are you sure you want to delete this task?"
-    )) {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this task?"
+      )
+    ) {
       return;
     }
 
@@ -449,6 +532,8 @@ function App() {
     if (editingId === id) {
       resetForm();
     }
+
+    setNotice("Task deleted successfully.");
   }
 
   // ==============================
@@ -471,9 +556,7 @@ function App() {
           Make every day count.
         </p>
 
-        <p className="nav-label">
-          WORKSPACE
-        </p>
+        <p className="nav-label">WORKSPACE</p>
 
         <nav>
 
@@ -481,7 +564,8 @@ function App() {
             className={
               calendarView === "day" &&
               dailyView === "list"
-                ? "nav-active" : ""
+                ? "nav-active"
+                : ""
             }
             onClick={() => {
               setCalendarView("day");
@@ -495,7 +579,8 @@ function App() {
             className={
               calendarView === "day" &&
               dailyView === "timeline"
-                ? "nav-active" : ""
+                ? "nav-active"
+                : ""
             }
             onClick={() => openDay(new Date())}
           >
@@ -505,7 +590,8 @@ function App() {
           <button
             className={
               calendarView === "week"
-                ? "nav-active" : ""
+                ? "nav-active"
+                : ""
             }
             onClick={() => setCalendarView("week")}
           >
@@ -515,7 +601,8 @@ function App() {
           <button
             className={
               calendarView === "month"
-                ? "nav-active" : ""
+                ? "nav-active"
+                : ""
             }
             onClick={() => setCalendarView("month")}
           >
@@ -544,16 +631,14 @@ function App() {
 
             <h1>My Dashboard</h1>
 
-            <p>
-              Plan your day. Achieve your goals.
-            </p>
+            <p>Plan your day. Achieve your goals.</p>
           </div>
 
           <div className="header-actions">
 
             <button
-              className="theme-toggle"
               type="button"
+              className="theme-toggle"
               onClick={toggleTheme}
             >
               <span className="theme-icon">
@@ -578,17 +663,15 @@ function App() {
 
         </header>
 
-        {/* DAILY STATISTICS */}
+        {/* PRODUCTIVITY STATISTICS */}
 
         <p className="stats-date-label">
-          Daily overview · {selectedDate.toLocaleDateString(
-            "en-IN",
-            {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            }
-          )}
+          Daily overview ·{" "}
+          {selectedDate.toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })}
         </p>
 
         <section className="stats-grid">
@@ -629,7 +712,7 @@ function App() {
 
           <div className="left-panel">
 
-            {/* SMALL MONTHLY CALENDAR */}
+            {/* MINI CALENDAR */}
 
             <div className="panel calendar">
 
@@ -649,14 +732,14 @@ function App() {
 
                   <button
                     onClick={() => changeMonth(-1)}
-                    aria-label="Previous mini calendar month"
+                    aria-label="Previous month"
                   >
                     ‹
                   </button>
 
                   <button
                     onClick={() => changeMonth(1)}
-                    aria-label="Next mini calendar month"
+                    aria-label="Next month"
                   >
                     ›
                   </button>
@@ -671,10 +754,7 @@ function App() {
                   "Mon", "Tue", "Wed", "Thu",
                   "Fri", "Sat", "Sun",
                 ].map((day) => (
-                  <span
-                    className="weekday"
-                    key={day}
-                  >
+                  <span className="weekday" key={day}>
                     {day}
                   </span>
                 ))}
@@ -691,9 +771,7 @@ function App() {
                   (_, index) => {
                     const day = index + 1;
 
-                    const date = new Date(
-                      year, month, day
-                    );
+                    const date = new Date(year, month, day);
 
                     const key = dateKey(date);
 
@@ -714,11 +792,13 @@ function App() {
                         aria-pressed={key === selectedKey}
                         aria-label={date.toDateString()}
                       >
+
                         {day}
 
                         {hasTasks && (
                           <span className="task-dot" />
                         )}
+
                       </button>
                     );
                   }
@@ -728,14 +808,15 @@ function App() {
 
             </div>
 
-            {/* ADD OR EDIT TASK */}
+            {/* TASK CREATION AND EDITING FORM */}
 
             <div
               ref={formRef}
-              className={`panel
-                ${editingId !== null
-                  ? "editing-panel" : ""}
-              `}
+              className={`panel ${
+                editingId !== null
+                  ? "editing-panel"
+                  : ""
+              }`}
             >
 
               <h3>
@@ -745,14 +826,13 @@ function App() {
               </h3>
 
               <p className="form-date">
-                {selectedDate.toLocaleDateString(
-                  "en-IN",
-                  {
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  }
-                )}
+                {parseDate(
+                  taskDate || selectedKey
+                ).toLocaleDateString("en-IN", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
               </p>
 
               <form
@@ -776,9 +856,26 @@ function App() {
                   required
                 />
 
+                {/* NEW DATE FIELD */}
+
+                <label htmlFor="task-date">
+                  Task Date
+                </label>
+
+                <input
+                  id="task-date"
+                  type="date"
+                  value={taskDate || selectedKey}
+                  onChange={(e) =>
+                    setTaskDate(e.target.value)
+                  }
+                  required
+                />
+
                 <div className="form-row">
 
                   <div>
+
                     <label htmlFor="start-time">
                       Start Time
                     </label>
@@ -792,9 +889,11 @@ function App() {
                       }
                       required
                     />
+
                   </div>
 
                   <div>
+
                     <label htmlFor="end-time">
                       End Time
                     </label>
@@ -808,6 +907,7 @@ function App() {
                       }
                       required
                     />
+
                   </div>
 
                 </div>
@@ -849,8 +949,8 @@ function App() {
                 </select>
 
                 <button
-                  className="primary-btn"
                   type="submit"
+                  className="primary-btn"
                 >
                   {editingId !== null
                     ? "✓ Save Changes"
@@ -904,6 +1004,7 @@ function App() {
                 className="primary-btn"
                 onClick={() => {
                   resetForm();
+                  setNotice("");
                   focusForm();
                 }}
               >
@@ -912,7 +1013,7 @@ function App() {
 
             </div>
 
-            {/* DAY / WEEK / MONTH SELECTOR */}
+            {/* DAY, WEEK AND MONTH OPTIONS */}
 
             <div className="calendar-toolbar">
 
@@ -924,7 +1025,8 @@ function App() {
                     key={item}
                     className={
                       calendarView === item
-                        ? "period-active" : ""
+                        ? "period-active"
+                        : ""
                     }
                     onClick={() => setCalendarView(item)}
                     aria-pressed={calendarView === item}
@@ -939,22 +1041,17 @@ function App() {
               <div className="calendar-navigation">
 
                 <button
-                  type="button"
                   onClick={() => navigateCalendar(-1)}
                   aria-label={`Previous ${calendarView}`}
                 >
                   ‹
                 </button>
 
-                <button
-                  type="button"
-                  onClick={goToToday}
-                >
+                <button onClick={goToToday}>
                   Today
                 </button>
 
                 <button
-                  type="button"
                   onClick={() => navigateCalendar(1)}
                   aria-label={`Next ${calendarView}`}
                 >
@@ -969,15 +1066,26 @@ function App() {
               {getCalendarTitle()}
             </h3>
 
-            {/* DAILY VIEW SWITCHER */}
+            {/* TASK STATUS MESSAGE */}
+
+            <p
+              className="schedule-notice"
+              role="status"
+            >
+              {notice}
+            </p>
+
+            {/* LIST AND TIMELINE SWITCHER */}
 
             {calendarView === "day" && (
+
               <div className="view-switcher">
 
                 <button
                   className={
                     dailyView === "list"
-                      ? "active-view" : ""
+                      ? "active-view"
+                      : ""
                   }
                   onClick={() => setDailyView("list")}
                   aria-pressed={dailyView === "list"}
@@ -988,7 +1096,8 @@ function App() {
                 <button
                   className={
                     dailyView === "timeline"
-                      ? "active-view" : ""
+                      ? "active-view"
+                      : ""
                   }
                   onClick={() =>
                     setDailyView("timeline")
@@ -999,18 +1108,22 @@ function App() {
                 </button>
 
               </div>
+
             )}
 
-            {/* MONTHLY CALENDAR */}
+            {/* FULL MONTHLY CALENDAR */}
 
             {calendarView === "month" && (
+
               <CalendarViews
                 selectedDate={selectedDate}
                 tasks={tasks}
                 onSelectDate={openDay}
                 onAdd={addFromCalendar}
                 onEdit={editTask}
+                onMove={moveTask}
               />
+
             )}
 
             {/* DAILY AND WEEKLY TIMELINE */}
@@ -1029,11 +1142,12 @@ function App() {
                 onEdit={editTask}
                 onAdd={addFromCalendar}
                 onSelectDate={openDay}
+                onMove={moveTask}
               />
 
             )}
 
-            {/* DAILY LIST VIEW */}
+            {/* DAILY TASK LIST */}
 
             {calendarView === "day" &&
               dailyView === "list" && (
@@ -1043,12 +1157,16 @@ function App() {
                 {dailyTasks.length === 0 ? (
 
                   <div className="empty-state">
+
                     <div className="empty-icon">▤</div>
+
                     <h3>No tasks scheduled</h3>
+
                     <p>
                       Add your first task to start
                       planning your day.
                     </p>
+
                   </div>
 
                 ) : (
@@ -1057,10 +1175,11 @@ function App() {
 
                     <div
                       key={task.id}
-                      className={`task-card
-                        ${task.completed
-                          ? "completed" : ""}
-                      `}
+                      className={`task-card ${
+                        task.completed
+                          ? "completed"
+                          : ""
+                      }`}
                     >
 
                       <input
@@ -1109,7 +1228,9 @@ function App() {
 
                         <button
                           className="delete-btn"
-                          onClick={() => deleteTask(task.id)}
+                          onClick={() =>
+                            deleteTask(task.id)
+                          }
                           aria-label={`Delete ${task.title}`}
                           title="Delete task"
                         >

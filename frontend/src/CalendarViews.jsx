@@ -1,20 +1,13 @@
 
-const colors = {
-  Personal: "#64748b",
-  Education: "#6366f1",
-  Work: "#9333ea",
-  Sports: "#ea580c",
-  Health: "#16a34a",
-  Other: "#0891b2",
-};
+import { useState } from "react";
 
-function dateKey(date) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
+import {
+  categoryColors,
+  dateKey,
+  startTaskDrag,
+  isTaskDrag,
+  getDraggedTaskId,
+} from "./dragScheduling";
 
 function CalendarViews({
   selectedDate,
@@ -22,17 +15,19 @@ function CalendarViews({
   onSelectDate,
   onAdd,
   onEdit,
+  onMove,
 }) {
+  const [draggedId, setDraggedId] = useState(null);
+  const [dropDate, setDropDate] = useState(null);
+
   const year = selectedDate.getFullYear();
   const month = selectedDate.getMonth();
 
   const firstDay = new Date(year, month, 1);
-
   const offset = (firstDay.getDay() + 6) % 7;
 
-  const totalDays = new Date(
-    year, month + 1, 0
-  ).getDate();
+  const totalDays =
+    new Date(year, month + 1, 0).getDate();
 
   const totalCells =
     Math.ceil((offset + totalDays) / 7) * 7;
@@ -46,8 +41,53 @@ function CalendarViews({
   const todayKey = dateKey(new Date());
   const selectedKey = dateKey(selectedDate);
 
+  function handleDragStart(event, task) {
+    startTaskDrag(event, task);
+    setDraggedId(task.id);
+  }
+
+  function handleDragEnd() {
+    setDraggedId(null);
+    setDropDate(null);
+  }
+
+  function handleDragOver(event, key) {
+    if (!isTaskDrag(event)) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropDate(key);
+  }
+
+  function handleDragLeave(event) {
+    if (
+      event.relatedTarget instanceof Node &&
+      event.currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+
+    setDropDate(null);
+  }
+
+  function handleDrop(event, date) {
+    if (!isTaskDrag(event)) return;
+
+    event.preventDefault();
+
+    const id = getDraggedTaskId(event);
+
+    if (id) {
+      // Null means preserve the original timing.
+      onMove(id, date, null);
+    }
+
+    handleDragEnd();
+  }
+
   return (
     <div className="month-calendar-scroll">
+
       <div className="month-calendar">
 
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -77,15 +117,25 @@ function CalendarViews({
                   ? "outside-month" : ""}
                 ${key === selectedKey
                   ? "month-selected" : ""}
+                ${dropDate === key
+                  ? "month-drop-target" : ""}
               `}
+              onDragOver={(event) =>
+                handleDragOver(event, key)
+              }
+              onDragLeave={handleDragLeave}
+              onDrop={(event) =>
+                handleDrop(event, date)
+              }
             >
+
               <div className="month-cell-header">
 
                 <button
                   type="button"
-                  className={`month-date
-                    ${key === todayKey ? "month-today" : ""}
-                  `}
+                  className={`month-date ${
+                    key === todayKey ? "month-today" : ""
+                  }`}
                   onClick={() => onSelectDate(date)}
                   aria-label={`Open ${date.toDateString()}`}
                 >
@@ -106,14 +156,23 @@ function CalendarViews({
               {dayTasks.slice(0, 3).map((task) => (
                 <button
                   type="button"
+                  draggable
                   key={task.id}
-                  className={`month-event
-                    ${task.completed ? "event-completed" : ""}
+                  className={`month-event draggable-task
+                    ${task.completed
+                      ? "event-completed" : ""}
+                    ${draggedId === task.id
+                      ? "task-dragging" : ""}
                   `}
                   style={{
                     "--event-color":
-                      colors[task.category] || colors.Other,
+                      categoryColors[task.category] ||
+                      categoryColors.Other,
                   }}
+                  onDragStart={(event) =>
+                    handleDragStart(event, task)
+                  }
+                  onDragEnd={handleDragEnd}
                   onClick={() => onEdit(task)}
                   title={`${task.startTime} - ${task.title}`}
                 >
@@ -137,6 +196,7 @@ function CalendarViews({
         })}
 
       </div>
+
     </div>
   );
 }
