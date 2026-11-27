@@ -1,68 +1,109 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+
+import Timeline from "./Timeline";
+import CalendarViews from "./CalendarViews";
+
 import "./App.css";
+import "./CalendarViews.css";
 
-// Convert dates into YYYY-MM-DD format
+const categories = [
+  "Personal",
+  "Education",
+  "Work",
+  "Sports",
+  "Health",
+  "Other",
+];
+
+const priorities = ["Low", "Medium", "High"];
+
+// ================================
+// DATE UTILITIES
+// ================================
+
 function dateKey(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
 
-  return `${year}-${month}-${day}`;
+function addDays(date, amount) {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() + amount
+  );
+}
+
+function getWeekStart(date) {
+  return addDays(
+    date,
+    -((date.getDay() + 6) % 7)
+  );
 }
 
 function App() {
-  // =============================
-  // LIGHT AND DARK THEME
-  // =============================
 
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem("dayplanner-theme") === "dark"
+  // ==============================
+  // THEME
+  // ==============================
+
+  const [theme, setTheme] = useState(() =>
+    localStorage.getItem("dayplanner-theme") === "dark"
       ? "dark"
-      : "light";
-  });
+      : "light"
+  );
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute(
+      "data-theme",
+      theme
+    );
+
     localStorage.setItem("dayplanner-theme", theme);
   }, [theme]);
 
   function toggleTheme() {
-    setTheme((previousTheme) =>
-      previousTheme === "light" ? "dark" : "light"
+    setTheme((previous) =>
+      previous === "light" ? "dark" : "light"
     );
   }
 
-  // =============================
+  // ==============================
   // CALENDAR STATES
-  // =============================
+  // ==============================
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] =
+    useState(new Date());
 
-  // =============================
-  // TASK STATES
-  // =============================
+  const [currentMonth, setCurrentMonth] =
+    useState(new Date());
+
+  const [calendarView, setCalendarView] =
+    useState("day");
+
+  const [dailyView, setDailyView] =
+    useState("timeline");
+
+  // ==============================
+  // TASK STORAGE
+  // ==============================
 
   const [tasks, setTasks] = useState(() => {
     try {
-      const savedTasks = JSON.parse(
+      const saved = JSON.parse(
         localStorage.getItem("dayplanner-tasks")
       );
 
-      return Array.isArray(savedTasks) ? savedTasks : [];
+      return Array.isArray(saved) ? saved : [];
     } catch {
       return [];
     }
   });
 
-  const [title, setTitle] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [category, setCategory] = useState("Personal");
-  const [priority, setPriority] = useState("Medium");
-
-  // Save tasks automatically
   useEffect(() => {
     localStorage.setItem(
       "dayplanner-tasks",
@@ -70,28 +111,59 @@ function App() {
     );
   }, [tasks]);
 
-  // =============================
+  // ==============================
+  // TASK FORM
+  // ==============================
+
+  const [title, setTitle] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+
+  const [category, setCategory] =
+    useState("Personal");
+
+  const [priority, setPriority] =
+    useState("Medium");
+
+  const [editingId, setEditingId] =
+    useState(null);
+
+  const formRef = useRef(null);
+  const titleRef = useRef(null);
+
+  // ==============================
   // CALENDAR CALCULATIONS
-  // =============================
+  // ==============================
+
+  const selectedKey = dateKey(selectedDate);
 
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
 
-  const firstDay = new Date(year, month, 1).getDay();
-  const totalDays = new Date(year, month + 1, 0).getDate();
+  const firstDay =
+    (new Date(year, month, 1).getDay() + 6) % 7;
 
-  const selectedKey = dateKey(selectedDate);
+  const totalDays =
+    new Date(year, month + 1, 0).getDate();
 
-  // Filter and sort tasks for selected date
+  const weekStart = getWeekStart(selectedDate);
+
+  const weekDays = Array.from(
+    { length: 7 },
+    (_, index) => addDays(weekStart, index)
+  );
+
+  const weekEnd = weekDays[6];
+
+  // ==============================
+  // TASK CALCULATIONS
+  // ==============================
+
   const dailyTasks = tasks
     .filter((task) => task.date === selectedKey)
     .sort((a, b) =>
       a.startTime.localeCompare(b.startTime)
     );
-
-  // =============================
-  // PRODUCTIVITY CALCULATIONS
-  // =============================
 
   const completedTasks = dailyTasks.filter(
     (task) => task.completed
@@ -102,13 +174,32 @@ function App() {
 
   const progress = dailyTasks.length
     ? Math.round(
-        (completedTasks / dailyTasks.length) * 100
+        completedTasks / dailyTasks.length * 100
       )
     : 0;
 
-  // =============================
-  // CALENDAR FUNCTIONS
-  // =============================
+  const weekKeys = weekDays.map(dateKey);
+
+  const weekTasks = tasks.filter(
+    (task) => weekKeys.includes(task.date)
+  );
+
+  const monthTasks = tasks.filter(
+    (task) => task.date.startsWith(
+      selectedKey.slice(0, 7)
+    )
+  );
+
+  const visibleTaskCount =
+    calendarView === "week"
+      ? weekTasks.length
+      : calendarView === "month"
+        ? monthTasks.length
+        : dailyTasks.length;
+
+  // ==============================
+  // CALENDAR NAVIGATION
+  // ==============================
 
   function changeMonth(direction) {
     setCurrentMonth(
@@ -116,18 +207,128 @@ function App() {
     );
   }
 
-  function goToToday() {
-    const today = new Date();
-
-    setSelectedDate(today);
-    setCurrentMonth(today);
+  function selectDate(date) {
+    setSelectedDate(date);
+    setCurrentMonth(date);
+    resetForm();
   }
 
-  // =============================
-  // ADD NEW TASK
-  // =============================
+  function openDay(date) {
+    selectDate(date);
+    setCalendarView("day");
+    setDailyView("timeline");
+  }
 
-  function addTask(event) {
+  function goToToday() {
+    selectDate(new Date());
+  }
+
+  function navigateCalendar(direction) {
+    let nextDate;
+
+    if (calendarView === "day") {
+      nextDate = addDays(selectedDate, direction);
+    } else if (calendarView === "week") {
+      nextDate = addDays(
+        selectedDate,
+        direction * 7
+      );
+    } else {
+      const targetMonth = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth() + direction,
+        1
+      );
+
+      const lastDay = new Date(
+        targetMonth.getFullYear(),
+        targetMonth.getMonth() + 1,
+        0
+      ).getDate();
+
+      nextDate = new Date(
+        targetMonth.getFullYear(),
+        targetMonth.getMonth(),
+        Math.min(selectedDate.getDate(), lastDay)
+      );
+    }
+
+    selectDate(nextDate);
+  }
+
+  function getCalendarTitle() {
+    if (calendarView === "month") {
+      return selectedDate.toLocaleDateString(
+        "en-IN",
+        {
+          month: "long",
+          year: "numeric",
+        }
+      );
+    }
+
+    if (calendarView === "week") {
+      const start = weekStart.toLocaleDateString(
+        "en-IN",
+        {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }
+      );
+
+      const end = weekEnd.toLocaleDateString(
+        "en-IN",
+        {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }
+      );
+
+      return `${start} – ${end}`;
+    }
+
+    return selectedDate.toLocaleDateString(
+      "en-IN",
+      {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }
+    );
+  }
+
+  // ==============================
+  // TASK FORM FUNCTIONS
+  // ==============================
+
+  function resetForm() {
+    setTitle("");
+    setStartTime("");
+    setEndTime("");
+    setCategory("Personal");
+    setPriority("Medium");
+    setEditingId(null);
+  }
+
+  function focusForm() {
+    formRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    titleRef.current?.focus({
+      preventScroll: true,
+    });
+  }
+
+  // ==============================
+  // SAVE TASK
+  // ==============================
+
+  function saveTask(event) {
     event.preventDefault();
 
     if (!title.trim() || !startTime || !endTime) {
@@ -140,33 +341,86 @@ function App() {
       return;
     }
 
-    const newTask = {
-      id: crypto.randomUUID(),
+    const taskData = {
       title: title.trim(),
       date: selectedKey,
       startTime,
       endTime,
       category,
       priority,
-      completed: false,
     };
 
-    setTasks((previous) => [
-      ...previous,
-      newTask,
-    ]);
+    if (editingId !== null) {
+      setTasks((previous) =>
+        previous.map((task) =>
+          task.id === editingId
+            ? { ...task, ...taskData }
+            : task
+        )
+      );
+    } else {
+      const newTask = {
+        id: crypto.randomUUID(),
+        ...taskData,
+        completed: false,
+      };
 
-    // Clear form
-    setTitle("");
-    setStartTime("");
-    setEndTime("");
-    setCategory("Personal");
-    setPriority("Medium");
+      setTasks((previous) => [
+        ...previous,
+        newTask,
+      ]);
+    }
+
+    resetForm();
   }
 
-  // =============================
-  // COMPLETE TASK
-  // =============================
+  // ==============================
+  // EDIT TASK
+  // ==============================
+
+  function editTask(task) {
+    const [y, m, d] =
+      task.date.split("-").map(Number);
+
+    const taskDate = new Date(y, m - 1, d);
+
+    setSelectedDate(taskDate);
+    setCurrentMonth(taskDate);
+
+    setEditingId(task.id);
+    setTitle(task.title);
+    setStartTime(task.startTime);
+    setEndTime(task.endTime);
+    setCategory(task.category);
+    setPriority(task.priority);
+
+    focusForm();
+  }
+
+  // ==============================
+  // QUICK SCHEDULING
+  // ==============================
+
+  function addFromCalendar(date, hour = 9) {
+    selectDate(date);
+
+    const start =
+      `${String(hour).padStart(2, "0")}:00`;
+
+    const end =
+      hour === 23
+        ? "23:59"
+        : `${String(hour + 1).padStart(2, "0")}:00`;
+
+    setStartTime(start);
+    setEndTime(end);
+
+    focusForm();
+  }
+
+  // ==============================
+  // COMPLETE AND DELETE TASKS
+  // ==============================
 
   function toggleTask(id) {
     setTasks((previous) =>
@@ -181,25 +435,25 @@ function App() {
     );
   }
 
-  // =============================
-  // DELETE TASK
-  // =============================
-
   function deleteTask(id) {
-    const confirmDelete = window.confirm(
+    if (!window.confirm(
       "Are you sure you want to delete this task?"
+    )) {
+      return;
+    }
+
+    setTasks((previous) =>
+      previous.filter((task) => task.id !== id)
     );
 
-    if (confirmDelete) {
-      setTasks((previous) =>
-        previous.filter((task) => task.id !== id)
-      );
+    if (editingId === id) {
+      resetForm();
     }
   }
 
-  // =============================
+  // ==============================
   // WEBSITE INTERFACE
-  // =============================
+  // ==============================
 
   return (
     <div className="app">
@@ -222,16 +476,52 @@ function App() {
         </p>
 
         <nav>
+
           <button
-            className="nav-active"
-            onClick={goToToday}
+            className={
+              calendarView === "day" &&
+              dailyView === "list"
+                ? "nav-active" : ""
+            }
+            onClick={() => {
+              setCalendarView("day");
+              setDailyView("list");
+            }}
           >
             ▦ Dashboard
           </button>
 
-          <button onClick={goToToday}>
+          <button
+            className={
+              calendarView === "day" &&
+              dailyView === "timeline"
+                ? "nav-active" : ""
+            }
+            onClick={() => openDay(new Date())}
+          >
             ◷ Today's Schedule
           </button>
+
+          <button
+            className={
+              calendarView === "week"
+                ? "nav-active" : ""
+            }
+            onClick={() => setCalendarView("week")}
+          >
+            ▤ Weekly Calendar
+          </button>
+
+          <button
+            className={
+              calendarView === "month"
+                ? "nav-active" : ""
+            }
+            onClick={() => setCalendarView("month")}
+          >
+            ▦ Monthly Calendar
+          </button>
+
         </nav>
 
         <div className="sidebar-footer">
@@ -244,8 +534,6 @@ function App() {
       {/* MAIN DASHBOARD */}
 
       <main className="main-content">
-
-        {/* HEADER */}
 
         <header className="header">
 
@@ -261,21 +549,13 @@ function App() {
             </p>
           </div>
 
-          {/* THEME AND TODAY BUTTONS */}
-
           <div className="header-actions">
 
             <button
               className="theme-toggle"
-              onClick={toggleTheme}
               type="button"
-              aria-label={
-                theme === "light"
-                  ? "Switch to dark mode"
-                  : "Switch to light mode"
-              }
+              onClick={toggleTheme}
             >
-
               <span className="theme-icon">
                 {theme === "light" ? "☾" : "☀"}
               </span>
@@ -285,7 +565,6 @@ function App() {
                   ? "Dark Mode"
                   : "Light Mode"}
               </span>
-
             </button>
 
             <button
@@ -299,76 +578,58 @@ function App() {
 
         </header>
 
-        {/* STATISTICS CARDS */}
+        {/* DAILY STATISTICS */}
+
+        <p className="stats-date-label">
+          Daily overview · {selectedDate.toLocaleDateString(
+            "en-IN",
+            {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }
+          )}
+        </p>
 
         <section className="stats-grid">
 
           <div className="stat-card">
-
             <p>Total Tasks</p>
-
-            <h2 className="purple">
-              {dailyTasks.length}
-            </h2>
-
+            <h2 className="purple">{dailyTasks.length}</h2>
             <span>Scheduled activities</span>
-
           </div>
 
           <div className="stat-card">
-
             <p>Completed</p>
-
-            <h2 className="green">
-              {completedTasks}
-            </h2>
-
+            <h2 className="green">{completedTasks}</h2>
             <span>Tasks accomplished</span>
-
           </div>
 
           <div className="stat-card">
-
             <p>Pending</p>
-
-            <h2 className="orange">
-              {pendingTasks}
-            </h2>
-
+            <h2 className="orange">{pendingTasks}</h2>
             <span>Remaining activities</span>
-
           </div>
 
           <div className="stat-card">
-
             <p>Daily Progress</p>
-
-            <h2 className="purple">
-              {progress}%
-            </h2>
+            <h2 className="purple">{progress}%</h2>
 
             <div className="progress-track">
-
               <div
                 className="progress-fill"
-                style={{
-                  width: `${progress}%`,
-                }}
+                style={{ width: `${progress}%` }}
               />
-
             </div>
-
           </div>
 
         </section>
 
-        {/* CALENDAR AND SCHEDULE */}
-
-        <section className="dashboard-grid">
+        <section className="dashboard-grid advanced-dashboard">
 
           <div className="left-panel">
 
-            {/* MONTHLY CALENDAR */}
+            {/* SMALL MONTHLY CALENDAR */}
 
             <div className="panel calendar">
 
@@ -376,7 +637,7 @@ function App() {
 
                 <h3>
                   {currentMonth.toLocaleDateString(
-                    "en-US",
+                    "en-IN",
                     {
                       month: "long",
                       year: "numeric",
@@ -388,14 +649,14 @@ function App() {
 
                   <button
                     onClick={() => changeMonth(-1)}
-                    aria-label="Previous month"
+                    aria-label="Previous mini calendar month"
                   >
                     ‹
                   </button>
 
                   <button
                     onClick={() => changeMonth(1)}
-                    aria-label="Next month"
+                    aria-label="Next mini calendar month"
                   >
                     ›
                   </button>
@@ -407,41 +668,31 @@ function App() {
               <div className="calendar-grid">
 
                 {[
-                  "Sun",
-                  "Mon",
-                  "Tue",
-                  "Wed",
-                  "Thu",
-                  "Fri",
-                  "Sat",
+                  "Mon", "Tue", "Wed", "Thu",
+                  "Fri", "Sat", "Sun",
                 ].map((day) => (
-
                   <span
                     className="weekday"
                     key={day}
                   >
                     {day}
                   </span>
-
                 ))}
 
                 {Array.from(
                   { length: firstDay },
-                  (_, i) => (
-                    <span key={`empty-${i}`} />
+                  (_, index) => (
+                    <span key={`empty-${index}`} />
                   )
                 )}
 
                 {Array.from(
                   { length: totalDays },
-                  (_, i) => {
-
-                    const day = i + 1;
+                  (_, index) => {
+                    const day = index + 1;
 
                     const date = new Date(
-                      year,
-                      month,
-                      day
+                      year, month, day
                     );
 
                     const key = dateKey(date);
@@ -451,33 +702,24 @@ function App() {
                     );
 
                     return (
-
                       <button
                         key={day}
-                        className={`calendar-day ${
-                          key === selectedKey
-                            ? "selected"
-                            : ""
-                        } ${
-                          key === dateKey(new Date())
-                            ? "today"
-                            : ""
-                        }`}
-                        onClick={() =>
-                          setSelectedDate(date)
-                        }
-                        aria-label={date.toDateString()}
+                        className={`calendar-day
+                          ${key === selectedKey
+                            ? "selected" : ""}
+                          ${key === dateKey(new Date())
+                            ? "today" : ""}
+                        `}
+                        onClick={() => selectDate(date)}
                         aria-pressed={key === selectedKey}
+                        aria-label={date.toDateString()}
                       >
-
                         {day}
 
                         {hasTasks && (
                           <span className="task-dot" />
                         )}
-
                       </button>
-
                     );
                   }
                 )}
@@ -486,15 +728,36 @@ function App() {
 
             </div>
 
-            {/* ADD NEW TASK FORM */}
+            {/* ADD OR EDIT TASK */}
 
-            <div className="panel">
+            <div
+              ref={formRef}
+              className={`panel
+                ${editingId !== null
+                  ? "editing-panel" : ""}
+              `}
+            >
 
-              <h3>Add New Task</h3>
+              <h3>
+                {editingId !== null
+                  ? "Edit Task"
+                  : "Add New Task"}
+              </h3>
+
+              <p className="form-date">
+                {selectedDate.toLocaleDateString(
+                  "en-IN",
+                  {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  }
+                )}
+              </p>
 
               <form
                 className="task-form"
-                onSubmit={addTask}
+                onSubmit={saveTask}
               >
 
                 <label htmlFor="task-name">
@@ -503,6 +766,7 @@ function App() {
 
                 <input
                   id="task-name"
+                  ref={titleRef}
                   type="text"
                   placeholder="What are you planning?"
                   value={title}
@@ -515,7 +779,6 @@ function App() {
                 <div className="form-row">
 
                   <div>
-
                     <label htmlFor="start-time">
                       Start Time
                     </label>
@@ -529,11 +792,9 @@ function App() {
                       }
                       required
                     />
-
                   </div>
 
                   <div>
-
                     <label htmlFor="end-time">
                       End Time
                     </label>
@@ -547,7 +808,6 @@ function App() {
                       }
                       required
                     />
-
                   </div>
 
                 </div>
@@ -563,14 +823,11 @@ function App() {
                     setCategory(e.target.value)
                   }
                 >
-
-                  <option>Personal</option>
-                  <option>Education</option>
-                  <option>Work</option>
-                  <option>Sports</option>
-                  <option>Health</option>
-                  <option>Other</option>
-
+                  {categories.map((item) => (
+                    <option key={item}>
+                      {item}
+                    </option>
+                  ))}
                 </select>
 
                 <label htmlFor="priority">
@@ -584,19 +841,31 @@ function App() {
                     setPriority(e.target.value)
                   }
                 >
-
-                  <option>Low</option>
-                  <option>Medium</option>
-                  <option>High</option>
-
+                  {priorities.map((item) => (
+                    <option key={item}>
+                      {item}
+                    </option>
+                  ))}
                 </select>
 
                 <button
                   className="primary-btn"
                   type="submit"
                 >
-                  + Add Task
+                  {editingId !== null
+                    ? "✓ Save Changes"
+                    : "+ Add Task"}
                 </button>
+
+                {editingId !== null && (
+                  <button
+                    type="button"
+                    className="cancel-btn"
+                    onClick={resetForm}
+                  >
+                    Cancel Editing
+                  </button>
+                )}
 
               </form>
 
@@ -604,125 +873,260 @@ function App() {
 
           </div>
 
-          {/* DAILY SCHEDULE */}
+          {/* MAIN CALENDAR PANEL */}
 
           <div className="panel schedule-panel">
 
-            <p className="subtitle">
+            <div className="schedule-header">
 
-              {selectedDate.toLocaleDateString(
-                "en-US",
-                {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
+              <div>
+
+                <p className="subtitle">
+                  YOUR PLANNER
+                </p>
+
+                <h2>
+                  {calendarView === "day"
+                    ? "Daily Schedule"
+                    : calendarView === "week"
+                      ? "Weekly Schedule"
+                      : "Monthly Calendar"}
+                </h2>
+
+                <p className="schedule-description">
+                  {visibleTaskCount} activities planned
+                  for this {calendarView}
+                </p>
+
+              </div>
+
+              <button
+                className="primary-btn"
+                onClick={() => {
+                  resetForm();
+                  focusForm();
+                }}
+              >
+                + New Task
+              </button>
+
+            </div>
+
+            {/* DAY / WEEK / MONTH SELECTOR */}
+
+            <div className="calendar-toolbar">
+
+              <div className="period-switcher">
+
+                {["day", "week", "month"].map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    className={
+                      calendarView === item
+                        ? "period-active" : ""
+                    }
+                    onClick={() => setCalendarView(item)}
+                    aria-pressed={calendarView === item}
+                  >
+                    {item.charAt(0).toUpperCase() +
+                      item.slice(1)}
+                  </button>
+                ))}
+
+              </div>
+
+              <div className="calendar-navigation">
+
+                <button
+                  type="button"
+                  onClick={() => navigateCalendar(-1)}
+                  aria-label={`Previous ${calendarView}`}
+                >
+                  ‹
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToToday}
+                >
+                  Today
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateCalendar(1)}
+                  aria-label={`Next ${calendarView}`}
+                >
+                  ›
+                </button>
+
+              </div>
+
+            </div>
+
+            <h3 className="calendar-period-title">
+              {getCalendarTitle()}
+            </h3>
+
+            {/* DAILY VIEW SWITCHER */}
+
+            {calendarView === "day" && (
+              <div className="view-switcher">
+
+                <button
+                  className={
+                    dailyView === "list"
+                      ? "active-view" : ""
+                  }
+                  onClick={() => setDailyView("list")}
+                  aria-pressed={dailyView === "list"}
+                >
+                  ☷ List View
+                </button>
+
+                <button
+                  className={
+                    dailyView === "timeline"
+                      ? "active-view" : ""
+                  }
+                  onClick={() =>
+                    setDailyView("timeline")
+                  }
+                  aria-pressed={dailyView === "timeline"}
+                >
+                  ◷ Timeline
+                </button>
+
+              </div>
+            )}
+
+            {/* MONTHLY CALENDAR */}
+
+            {calendarView === "month" && (
+              <CalendarViews
+                selectedDate={selectedDate}
+                tasks={tasks}
+                onSelectDate={openDay}
+                onAdd={addFromCalendar}
+                onEdit={editTask}
+              />
+            )}
+
+            {/* DAILY AND WEEKLY TIMELINE */}
+
+            {(calendarView === "week" ||
+              (calendarView === "day" &&
+                dailyView === "timeline")) && (
+
+              <Timeline
+                days={
+                  calendarView === "week"
+                    ? weekDays
+                    : [selectedDate]
                 }
-              )}
+                tasks={tasks}
+                onEdit={editTask}
+                onAdd={addFromCalendar}
+                onSelectDate={openDay}
+              />
 
-            </p>
+            )}
 
-            <h2>Daily Schedule</h2>
+            {/* DAILY LIST VIEW */}
 
-            <p className="schedule-description">
+            {calendarView === "day" &&
+              dailyView === "list" && (
 
-              {dailyTasks.length} activities planned
-              for this day
+              <div className="task-list">
 
-            </p>
+                {dailyTasks.length === 0 ? (
 
-            <div className="task-list">
-
-              {dailyTasks.length === 0 ? (
-
-                /* EMPTY STATE */
-
-                <div className="empty-state">
-
-                  <div className="empty-icon">
-                    ▤
+                  <div className="empty-state">
+                    <div className="empty-icon">▤</div>
+                    <h3>No tasks scheduled</h3>
+                    <p>
+                      Add your first task to start
+                      planning your day.
+                    </p>
                   </div>
 
-                  <h3>No tasks scheduled</h3>
+                ) : (
 
-                  <p>
-                    Add your first task to start
-                    planning your day.
-                  </p>
+                  dailyTasks.map((task) => (
 
-                </div>
+                    <div
+                      key={task.id}
+                      className={`task-card
+                        ${task.completed
+                          ? "completed" : ""}
+                      `}
+                    >
 
-              ) : (
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() =>
+                          toggleTask(task.id)
+                        }
+                        aria-label={`Complete ${task.title}`}
+                      />
 
-                /* DISPLAY ALL TASKS */
+                      <div className="task-details">
 
-                dailyTasks.map((task) => (
+                        <p className="task-time">
+                          {task.startTime} – {task.endTime}
+                        </p>
 
-                  <div
-                    className={`task-card ${
-                      task.completed
-                        ? "completed"
-                        : ""
-                    }`}
-                    key={task.id}
-                  >
+                        <h4>{task.title}</h4>
 
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={() =>
-                        toggleTask(task.id)
-                      }
-                      aria-label={`Complete ${task.title}`}
-                    />
+                        <div className="task-tags">
 
-                    <div className="task-details">
+                          <span className="category-tag">
+                            {task.category}
+                          </span>
 
-                      <p className="task-time">
+                          <span
+                            className={`priority ${task.priority.toLowerCase()}`}
+                          >
+                            {task.priority} Priority
+                          </span>
 
-                        {task.startTime} – {task.endTime}
+                        </div>
 
-                      </p>
+                      </div>
 
-                      <h4>{task.title}</h4>
+                      <div className="task-actions">
 
-                      <div className="task-tags">
-
-                        <span className="category-tag">
-
-                          {task.category}
-
-                        </span>
-
-                        <span
-                          className={`priority ${task.priority.toLowerCase()}`}
+                        <button
+                          className="edit-btn"
+                          onClick={() => editTask(task)}
+                          aria-label={`Edit ${task.title}`}
+                          title="Edit task"
                         >
+                          ✎
+                        </button>
 
-                          {task.priority} Priority
-
-                        </span>
+                        <button
+                          className="delete-btn"
+                          onClick={() => deleteTask(task.id)}
+                          aria-label={`Delete ${task.title}`}
+                          title="Delete task"
+                        >
+                          ×
+                        </button>
 
                       </div>
 
                     </div>
 
-                    <button
-                      className="delete-btn"
-                      onClick={() =>
-                        deleteTask(task.id)
-                      }
-                      aria-label={`Delete ${task.title}`}
-                    >
-                      ×
-                    </button>
+                  ))
 
-                  </div>
+                )}
 
-                ))
+              </div>
 
-              )}
-
-            </div>
+            )}
 
           </div>
 
